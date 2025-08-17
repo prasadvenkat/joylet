@@ -600,3 +600,25 @@ if __name__ == "__main__":
     # Initialize DB before starting
     asyncio.run(init_db())
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+@app.get("/admin/users")
+async def list_users(db: AsyncSession = Depends(get_db)):
+    """Debug endpoint to list all users"""
+    stmt = select(User)
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    
+    return {
+        "total_users": len(users),
+        "users": [
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "display_name": user.display_name,
+                "handle": user.handle,
+                "email_verified": user.email_verified,
+                "created_at": user.created_at.isoformat() if user.created_at else None
+            }
+            for user in users
+        ]
+    }
