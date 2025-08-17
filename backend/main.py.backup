@@ -564,14 +564,3 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    await init_db()
-    print("Database initialized!")
-
-if __name__ == "__main__":
-    import uvicorn
-    # Initialize DB before starting
-    asyncio.run(init_db())
-    uvicorn.run(app, host="0.0.0.0", port=8000)

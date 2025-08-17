@@ -2,7 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.pool import NullPool
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost/positive_journal")
+# Use SQLite for local development if no DATABASE_URL is set
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./positive_journal.db")
 
 engine = create_async_engine(
     DATABASE_URL,

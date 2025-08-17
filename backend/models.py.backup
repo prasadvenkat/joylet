@@ -1,48 +1,16 @@
 from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey, CheckConstraint, Index
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.types import TypeDecorator, CHAR
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 import uuid
-import os
 
 Base = declarative_base()
-
-# Custom UUID type that works with both SQLite and PostgreSQL
-class UUID(TypeDecorator):
-    impl = CHAR
-    cache_ok = True
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(PG_UUID())
-        else:
-            return dialect.type_descriptor(CHAR(36))
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-        elif dialect.name == 'postgresql':
-            return str(value)
-        else:
-            if not isinstance(value, uuid.UUID):
-                return str(value)
-            else:
-                return str(value)
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return value
-        else:
-            if not isinstance(value, uuid.UUID):
-                return uuid.UUID(value)
-            return value
 
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False, index=True)
     email_verified = Column(Boolean, default=False)
     password_hash = Column(Text, nullable=False)
@@ -59,8 +27,8 @@ class User(Base):
 class Session(Base):
     __tablename__ = "sessions"
     
-    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     token_hash = Column(Text, unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
@@ -72,17 +40,18 @@ class Session(Base):
 class Post(Base):
     __tablename__ = "posts"
     
-    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    author_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    author_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     body = Column(String(140), nullable=False)
-    parent_id = Column(UUID(), ForeignKey("posts.id"), nullable=True)
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("posts.id"), nullable=True)
     positivity_score = Column(String, nullable=True)  # For future ML
     is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     
     __table_args__ = (
-        CheckConstraint('length(body) <= 140', name='body_length_check'),
+        CheckConstraint('char_length(body) <= 140', name='body_length_check'),
         Index('ix_posts_author_created', 'author_id', 'created_at'),
+        Index('ix_posts_parent_id', 'parent_id', postgresql_where=Column('parent_id').isnot(None)),
     )
     
     # Relationships
@@ -93,8 +62,8 @@ class Post(Base):
 class Like(Base):
     __tablename__ = "likes"
     
-    post_id = Column(UUID(), ForeignKey("posts.id"), primary_key=True, index=True)
-    user_id = Column(UUID(), ForeignKey("users.id"), primary_key=True, index=True)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("posts.id"), primary_key=True, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), primary_key=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
@@ -104,9 +73,9 @@ class Like(Base):
 class ModerationReport(Base):
     __tablename__ = "moderation_reports"
     
-    id = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    post_id = Column(UUID(), ForeignKey("posts.id"), nullable=False, index=True)
-    reporter_id = Column(UUID(), ForeignKey("users.id"), nullable=False, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("posts.id"), nullable=False, index=True)
+    reporter_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     reason = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     status = Column(String, default="open")  # open, dismissed, actioned
@@ -114,7 +83,7 @@ class ModerationReport(Base):
 class EmailVerificationToken(Base):
     __tablename__ = "email_verification_tokens"
     
-    token = Column(UUID(), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(), ForeignKey("users.id"), unique=True, nullable=False)
+    token = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), unique=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True), nullable=False)
