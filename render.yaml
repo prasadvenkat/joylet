@@ -18,8 +18,8 @@ services:
   # Frontend Static Site
   - type: static
     name: positive-journal-frontend
-    buildCommand: npm ci && npm run build-export
-    staticPublishPath: ./out
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/out
     plan: free
     envVars:
       - key: NEXT_PUBLIC_API_URL
