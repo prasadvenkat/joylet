@@ -34,7 +34,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://your-frontend-domain.onrender.com"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Add both variants
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,39 +102,58 @@ async def require_auth(current_user: User = Depends(get_current_user)) -> User:
 # Auth endpoints
 @app.post("/auth/register", response_model=MessageResponse)
 async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
-    # Check if user exists
-    stmt = select(User).where(User.email == user_data.email)
-    result = await db.execute(stmt)
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    try:
+        print(f"Registration attempt - Email: {user_data.email}, Display name: {user_data.display_name}")
+        
+        # Check if user exists
+        stmt = select(User).where(User.email == user_data.email)
+        result = await db.execute(stmt)
+        existing_user = result.scalar_one_or_none()
+        
+        if existing_user:
+            print(f"User already exists: {user_data.email}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        # Create user
+        print("Hashing password...")
+        hashed_password = ph.hash(user_data.password)
+        
+        print("Creating user object...")
+        user = User(
+            email=user_data.email,
+            password_hash=hashed_password,
+            display_name=user_data.display_name,
+            handle=user_data.display_name.lower().replace(" ", "_")[:30],
+            email_verified=True  # Auto-verify for local testing
         )
-    
-    # Create user
-    hashed_password = ph.hash(user_data.password)
-    user = User(
-        email=user_data.email,
-        password_hash=hashed_password,
-        display_name=user_data.display_name,
-        handle=user_data.display_name.lower().replace(" ", "_")[:30]
-    )
-    
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    
-    # Create verification token
-    token = EmailVerificationToken(
-        token=uuid.uuid4(),
-        user_id=user.id,
-        expires_at=datetime.utcnow() + timedelta(hours=24)
-    )
-    db.add(token)
-    await db.commit()
-    
-    # In production, send email here
-    return MessageResponse(message=f"Registration successful. Verification token: {token.token}")
+        
+        print(f"Adding user to database: {user.email}")
+        db.add(user)
+        
+        print("Committing to database...")
+        await db.commit()
+        
+        print("Refreshing user object...")
+        await db.refresh(user)
+        
+        print(f"User created successfully with ID: {user.id}")
+        
+        return MessageResponse(message="Registration successful! You can now log in.")
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions (like "email already exists")
+        raise
+    except Exception as e:
+        print(f"Unexpected error during registration: {type(e).__name__}: {str(e)}")
+        print(f"Error details: {repr(e)}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Registration failed: {str(e)}"
+        )
 
 @app.post("/auth/verify-email", response_model=MessageResponse)
 async def verify_email(request: EmailVerification, db: AsyncSession = Depends(get_db)):
@@ -204,7 +223,11 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     db.add(session)
     await db.commit()
     
-    response = {
+    # Create proper JSON response
+    from fastapi import Response
+    import json
+    
+    response_data = {
         "message": "Login successful",
         "user": {
             "id": str(user.id),
@@ -214,19 +237,21 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
         }
     }
     
-    # Set httponly cookie
-    from fastapi import Response
-    resp = Response(content=str(response))
-    resp.set_cookie(
+    # Create response with cookie
+    response = Response(
+        content=json.dumps(response_data),
+        media_type="application/json"
+    )
+    response.set_cookie(
         key="session",
         value=session_token,
         httponly=True,
-        secure=True,
+        secure=False,  # Set to False for localhost
         samesite="lax",
         max_age=30 * 24 * 60 * 60  # 30 days
     )
     
-    return resp
+    return response
 
 @app.post("/auth/logout", response_model=MessageResponse)
 async def logout(
