@@ -2,23 +2,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.pool import NullPool
 import os
 
-# Use SQLite for local development if no DATABASE_URL is set
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./positive_journal.db")
 
-engine = create_async_engine(
-    DATABASE_URL,
-    poolclass=NullPool,
-    echo=True if os.getenv("DEBUG") else False,
-    # Add these SQLite-specific settings
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
+# Configure engine based on database type
+if "postgresql" in DATABASE_URL:
+    engine = create_async_engine(
+        DATABASE_URL,
+        poolclass=NullPool,
+        echo=True if os.getenv("DEBUG") else False
+    )
+else:
+    # SQLite configuration
+    engine = create_async_engine(
+        DATABASE_URL,
+        poolclass=NullPool,
+        echo=True if os.getenv("DEBUG") else False,
+        connect_args={"check_same_thread": False}
+    )
 
 async_session = async_sessionmaker(
     engine, 
     class_=AsyncSession, 
-    expire_on_commit=False,
-    autoflush=True,  # Add this
-    autocommit=False  # Add this
+    expire_on_commit=False
 )
 
 async def get_db():
