@@ -37,6 +37,7 @@ app.add_middleware(
     allow_origins=["http://localhost:3000", 
                    "http://127.0.0.1:3000",
                    "https://joylet.onrender.com",
+                   "https://positive-journal-frontend.onrender.com",
                    "https://*.onrender.com"
     ],
     allow_credentials=True,
