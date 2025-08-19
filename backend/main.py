@@ -6,17 +6,15 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import select, func, and_, or_
 from contextlib import asynccontextmanager
 import uuid
-import argon2
+import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional, List
 import re
+import json
 
 from database import get_db, init_db
 from models import User, Post, Like, Session, EmailVerificationToken, ModerationReport
 from schemas import *
-
-# Initialize password hasher
-ph = argon2.PasswordHasher()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,9 +32,11 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://joylet.onrender.com",
-                   "https://positive-journal-frontend.onrender.com",
-                   "https://*.onrender.com"
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "https://joylet-frontend.onrender.com",
+        "https://*.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -120,9 +120,9 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
                 detail="Email already registered"
             )
         
-        # Create user
+        # Create user with bcrypt password hashing
         print("Hashing password...")
-        hashed_password = ph.hash(user_data.password)
+        hashed_password = bcrypt.hashpw(user_data.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
         print("Creating user object...")
         user = User(
@@ -200,10 +200,8 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
             detail="Invalid credentials"
         )
     
-    # Verify password
-    try:
-        ph.verify(user.password_hash, credentials.password)
-    except argon2.exceptions.VerifyMismatchError:
+    # Verify password with bcrypt
+    if not bcrypt.checkpw(credentials.password.encode('utf-8'), user.password_hash.encode('utf-8')):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials"
@@ -228,7 +226,6 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     
     # Create proper JSON response
     from fastapi import Response
-    import json
     
     response_data = {
         "message": "Login successful",
@@ -584,26 +581,7 @@ async def toggle_like(
     
     return LikeResponse(liked=liked, like_count=like_count)
 
-# Health check
-@app.get("/healthz")
-async def health_check():
-    return {"status": "healthy"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-# Initialize database on startup
-@app.on_event("startup")
-async def startup_event():
-    await init_db()
-    print("Database initialized!")
-
-if __name__ == "__main__":
-    import uvicorn
-    # Initialize DB before starting
-    asyncio.run(init_db())
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
+# Admin endpoint for debugging
 @app.get("/admin/users")
 async def list_users(db: AsyncSession = Depends(get_db)):
     """Debug endpoint to list all users"""
@@ -625,3 +603,12 @@ async def list_users(db: AsyncSession = Depends(get_db)):
             for user in users
         ]
     }
+
+# Health check
+@app.get("/healthz")
+async def health_check():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
