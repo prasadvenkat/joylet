@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from datetime import datetime
 import uuid
@@ -13,8 +13,8 @@ def validate_email(email: str) -> str:
 
 class UserRegister(BaseModel):
     email: str = Field(..., description="Email address")
-    password: str = Field(min_length=8)
-    display_name: str = Field(max_length=40)
+    password: str = Field(..., min_length=8)
+    display_name: str = Field(..., max_length=40)
     
     @validator('email')
     def validate_email_format(cls, v):
@@ -47,7 +47,7 @@ class PublicUserProfile(BaseModel):
     post_count: int
 
 class PostCreate(BaseModel):
-    body: str = Field(max_length=140)
+    body: str = Field(..., max_length=140)
     parent_id: Optional[uuid.UUID] = None
 
 class PostResponse(BaseModel):
