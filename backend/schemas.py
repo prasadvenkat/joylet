@@ -1,15 +1,27 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
 from datetime import datetime
 import uuid
+import re
+
+def validate_email(email: str) -> str:
+    """Simple email validation"""
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, email):
+        raise ValueError('Invalid email format')
+    return email
 
 class UserRegister(BaseModel):
-    email: EmailStr
+    email: str = Field(..., description="Email address")
     password: str = Field(min_length=8)
     display_name: str = Field(max_length=40)
+    
+    @validator('email')
+    def validate_email_format(cls, v):
+        return validate_email(v)
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 class EmailVerification(BaseModel):
