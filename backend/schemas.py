@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
 import uuid
@@ -16,7 +16,8 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=8)
     display_name: str = Field(..., max_length=40)
     
-    @validator('email')
+    @field_validator('email')
+    @classmethod
     def validate_email_format(cls, v):
         return validate_email(v)
 

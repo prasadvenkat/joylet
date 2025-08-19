@@ -1,8 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Cookie
+from fastapi import FastAPI, Depends, HTTPException, status, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
-from sqlalchemy.ext.asyncio import Session
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import Session, selectinload  # Changed this line
 from sqlalchemy import select, func, and_, or_
 from contextlib import asynccontextmanager
 import uuid
@@ -13,13 +12,13 @@ import re
 import json
 
 from database import get_db, init_db
-from models import User, Post, Like, Session, EmailVerificationToken, ModerationReport
+from models import User, Post, Like, Session as DBSession, EmailVerificationToken, ModerationReport
 from schemas import *
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize database
-    await init_db()
+    # Initialize database (remove await since init_db is now sync)
+    init_db()
     yield
 
 app = FastAPI(
