@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import Session
 from sqlalchemy.orm import selectinload
 from sqlalchemy import select, func, and_, or_
 from contextlib import asynccontextmanager
@@ -73,7 +73,7 @@ def check_positivity(text: str) -> bool:
 # Dependency to get current user
 async def get_current_user(
     session_token: Optional[str] = Cookie(None, alias="session"),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ) -> Optional[User]:
     if not session_token:
         return None
@@ -86,7 +86,7 @@ async def get_current_user(
             Session.revoked == False
         )
     )
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     session = result.scalar_one_or_none()
     
     if not session:
@@ -104,13 +104,13 @@ async def require_auth(current_user: User = Depends(get_current_user)) -> User:
 
 # Auth endpoints
 @app.post("/auth/register", response_model=MessageResponse)
-async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
+async def register(user_data: UserRegister, db: Session = Depends(get_db)):
     try:
         print(f"Registration attempt - Email: {user_data.email}, Display name: {user_data.display_name}")
         
         # Check if user exists
         stmt = select(User).where(User.email == user_data.email)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         existing_user = result.scalar_one_or_none()
         
         if existing_user:
@@ -137,10 +137,10 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
         db.add(user)
         
         print("Committing to database...")
-        await db.commit()
+        db.commit()
         
         print("Refreshing user object...")
-        await db.refresh(user)
+        db.refresh(user)
         
         print(f"User created successfully with ID: {user.id}")
         
@@ -152,21 +152,21 @@ async def register(user_data: UserRegister, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         print(f"Unexpected error during registration: {type(e).__name__}: {str(e)}")
         print(f"Error details: {repr(e)}")
-        await db.rollback()
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
         )
 
 @app.post("/auth/verify-email", response_model=MessageResponse)
-async def verify_email(request: EmailVerification, db: AsyncSession = Depends(get_db)):
+async def verify_email(request: EmailVerification, db: Session = Depends(get_db)):
     stmt = select(EmailVerificationToken).where(
         and_(
             EmailVerificationToken.token == request.token,
             EmailVerificationToken.expires_at > datetime.utcnow()
         )
     )
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     token = result.scalar_one_or_none()
     
     if not token:
@@ -177,21 +177,21 @@ async def verify_email(request: EmailVerification, db: AsyncSession = Depends(ge
     
     # Update user
     user_stmt = select(User).where(User.id == token.user_id)
-    user_result = await db.execute(user_stmt)
+    user_result = db.execute(user_stmt)
     user = user_result.scalar_one()
     user.email_verified = True
     
     # Delete token
-    await db.delete(token)
-    await db.commit()
+    db.delete(token)
+    db.commit()
     
     return MessageResponse(message="Email verified successfully")
 
 @app.post("/auth/login")
-async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(credentials: UserLogin, db: Session = Depends(get_db)):
     # Find user
     stmt = select(User).where(User.email == credentials.email)
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     user = result.scalar_one_or_none()
     
     if not user:
@@ -222,7 +222,7 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
     )
     
     db.add(session)
-    await db.commit()
+    db.commit()
     
     # Create proper JSON response
     from fastapi import Response
@@ -257,15 +257,15 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
 async def logout(
     current_user: User = Depends(require_auth),
     session_token: Optional[str] = Cookie(None, alias="session"),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     if session_token:
         stmt = select(Session).where(Session.token_hash == session_token)
-        result = await db.execute(stmt)
+        result = db.execute(stmt)
         session = result.scalar_one_or_none()
         if session:
             session.revoked = True
-            await db.commit()
+            db.commit()
     
     from fastapi import Response
     resp = Response(content='{"message": "Logged out successfully"}')
@@ -284,9 +284,9 @@ async def get_my_profile(current_user: User = Depends(require_auth)):
     )
 
 @app.get("/users/{user_id}", response_model=PublicUserProfile)
-async def get_user_profile(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_user_profile(user_id: uuid.UUID, db: Session = Depends(get_db)):
     stmt = select(User).where(User.id == user_id)
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     user = result.scalar_one_or_none()
     
     if not user:
@@ -296,7 +296,7 @@ async def get_user_profile(user_id: uuid.UUID, db: AsyncSession = Depends(get_db
     post_count_stmt = select(func.count(Post.id)).where(
         and_(Post.author_id == user_id, Post.is_deleted == False)
     )
-    post_count_result = await db.execute(post_count_stmt)
+    post_count_result = db.execute(post_count_stmt)
     post_count = post_count_result.scalar()
     
     return PublicUserProfile(
@@ -312,7 +312,7 @@ async def get_user_profile(user_id: uuid.UUID, db: AsyncSession = Depends(get_db
 async def get_posts(
     cursor: Optional[str] = None,
     limit: int = 20,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user)
 ):
     # Build query for top-level posts only
@@ -334,7 +334,7 @@ async def get_posts(
         except:
             pass  # Invalid cursor, ignore
     
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     posts = result.scalars().all()
     
     # Check if there are more posts
@@ -347,7 +347,7 @@ async def get_posts(
     for post in posts:
         # Get like count
         like_count_stmt = select(func.count(Like.post_id)).where(Like.post_id == post.id)
-        like_count_result = await db.execute(like_count_stmt)
+        like_count_result = db.execute(like_count_stmt)
         like_count = like_count_result.scalar()
         
         # Check if current user liked
@@ -356,14 +356,14 @@ async def get_posts(
             user_like_stmt = select(Like).where(
                 and_(Like.post_id == post.id, Like.user_id == current_user.id)
             )
-            user_like_result = await db.execute(user_like_stmt)
+            user_like_result = db.execute(user_like_stmt)
             user_liked = user_like_result.scalar_one_or_none() is not None
         
         # Get reply count
         reply_count_stmt = select(func.count(Post.id)).where(
             and_(Post.parent_id == post.id, Post.is_deleted == False)
         )
-        reply_count_result = await db.execute(reply_count_stmt)
+        reply_count_result = db.execute(reply_count_stmt)
         reply_count = reply_count_result.scalar()
         
         post_items.append(PostResponse(
@@ -393,7 +393,7 @@ async def get_posts(
 async def create_post(
     post_data: PostCreate,
     current_user: User = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     # Check positivity
     if not check_positivity(post_data.body):
@@ -405,7 +405,7 @@ async def create_post(
     # Check if parent exists (for replies)
     if post_data.parent_id:
         parent_stmt = select(Post).where(Post.id == post_data.parent_id)
-        parent_result = await db.execute(parent_stmt)
+        parent_result = db.execute(parent_stmt)
         parent_post = parent_result.scalar_one_or_none()
         if not parent_post:
             raise HTTPException(status_code=404, detail="Parent post not found")
@@ -418,8 +418,8 @@ async def create_post(
     )
     
     db.add(post)
-    await db.commit()
-    await db.refresh(post, ["author"])
+    db.commit()
+    db.refresh(post, ["author"])
     
     return PostResponse(
         id=post.id,
@@ -439,12 +439,12 @@ async def create_post(
 @app.get("/posts/{post_id}", response_model=PostDetail)
 async def get_post_detail(
     post_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user)
 ):
     # Get main post
     stmt = select(Post).options(selectinload(Post.author)).where(Post.id == post_id)
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     post = result.scalar_one_or_none()
     
     if not post:
@@ -452,7 +452,7 @@ async def get_post_detail(
     
     # Get like count and user like status
     like_count_stmt = select(func.count(Like.post_id)).where(Like.post_id == post.id)
-    like_count_result = await db.execute(like_count_stmt)
+    like_count_result = db.execute(like_count_stmt)
     like_count = like_count_result.scalar()
     
     user_liked = False
@@ -460,7 +460,7 @@ async def get_post_detail(
         user_like_stmt = select(Like).where(
             and_(Like.post_id == post.id, Like.user_id == current_user.id)
         )
-        user_like_result = await db.execute(user_like_stmt)
+        user_like_result = db.execute(user_like_stmt)
         user_liked = user_like_result.scalar_one_or_none() is not None
     
     # Get replies
@@ -468,14 +468,14 @@ async def get_post_detail(
         and_(Post.parent_id == post_id, Post.is_deleted == False)
     ).order_by(Post.created_at.asc())
     
-    replies_result = await db.execute(replies_stmt)
+    replies_result = db.execute(replies_stmt)
     replies = replies_result.scalars().all()
     
     reply_items = []
     for reply in replies:
         # Get reply like count
         reply_like_count_stmt = select(func.count(Like.post_id)).where(Like.post_id == reply.id)
-        reply_like_count_result = await db.execute(reply_like_count_stmt)
+        reply_like_count_result = db.execute(reply_like_count_stmt)
         reply_like_count = reply_like_count_result.scalar()
         
         # Check if user liked reply
@@ -484,7 +484,7 @@ async def get_post_detail(
             reply_user_like_stmt = select(Like).where(
                 and_(Like.post_id == reply.id, Like.user_id == current_user.id)
             )
-            reply_user_like_result = await db.execute(reply_user_like_stmt)
+            reply_user_like_result = db.execute(reply_user_like_stmt)
             reply_user_liked = reply_user_like_result.scalar_one_or_none() is not None
         
         reply_items.append(PostResponse(
@@ -523,10 +523,10 @@ async def get_post_detail(
 async def delete_post(
     post_id: uuid.UUID,
     current_user: User = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     stmt = select(Post).where(Post.id == post_id)
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     post = result.scalar_one_or_none()
     
     if not post:
@@ -536,7 +536,7 @@ async def delete_post(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     post.is_deleted = True
-    await db.commit()
+    db.commit()
     
     return MessageResponse(message="Post deleted successfully")
 
@@ -545,11 +545,11 @@ async def delete_post(
 async def toggle_like(
     post_id: uuid.UUID,
     current_user: User = Depends(require_auth),
-    db: AsyncSession = Depends(get_db)
+    db: Session = Depends(get_db)
 ):
     # Check if post exists
     post_stmt = select(Post).where(Post.id == post_id)
-    post_result = await db.execute(post_stmt)
+    post_result = db.execute(post_stmt)
     post = post_result.scalar_one_or_none()
     
     if not post:
@@ -559,12 +559,12 @@ async def toggle_like(
     like_stmt = select(Like).where(
         and_(Like.post_id == post_id, Like.user_id == current_user.id)
     )
-    like_result = await db.execute(like_stmt)
+    like_result = db.execute(like_stmt)
     existing_like = like_result.scalar_one_or_none()
     
     if existing_like:
         # Unlike
-        await db.delete(existing_like)
+        db.delete(existing_like)
         liked = False
     else:
         # Like
@@ -572,21 +572,21 @@ async def toggle_like(
         db.add(like)
         liked = True
     
-    await db.commit()
+    db.commit()
     
     # Get updated like count
     count_stmt = select(func.count(Like.post_id)).where(Like.post_id == post_id)
-    count_result = await db.execute(count_stmt)
+    count_result = db.execute(count_stmt)
     like_count = count_result.scalar()
     
     return LikeResponse(liked=liked, like_count=like_count)
 
 # Admin endpoint for debugging
 @app.get("/admin/users")
-async def list_users(db: AsyncSession = Depends(get_db)):
+async def list_users(db: Session = Depends(get_db)):
     """Debug endpoint to list all users"""
     stmt = select(User)
-    result = await db.execute(stmt)
+    result = db.execute(stmt)
     users = result.scalars().all()
     
     return {

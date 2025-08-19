@@ -1,42 +1,35 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 import os
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./positive_journal.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./positive_journal.db")
 
-# Configure engine based on database type
-if "postgresql" in DATABASE_URL:
-    engine = create_async_engine(
-        DATABASE_URL,
-        poolclass=NullPool,
-        echo=True if os.getenv("DEBUG") else False
-    )
-else:
-    # SQLite configuration
-    engine = create_async_engine(
-        DATABASE_URL,
-        poolclass=NullPool,
-        echo=True if os.getenv("DEBUG") else False,
-        connect_args={"check_same_thread": False}
-    )
+# Convert async URLs to sync
+if "postgresql+asyncpg://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+elif DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://")
 
-async_session = async_sessionmaker(
-    engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False
+engine = create_engine(
+    DATABASE_URL,
+    poolclass=NullPool,
+    echo=True if os.getenv("DEBUG") else False,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
 )
 
-async def get_db():
-    async with async_session() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-async def init_db():
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def init_db():
     from models import Base
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    Base.metadata.create_all(bind=engine)
