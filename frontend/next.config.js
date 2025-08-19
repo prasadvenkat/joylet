@@ -7,6 +7,9 @@ const nextConfig = {
   trailingSlash: true,
   images: {
     unoptimized: true
+  },
+  experimental: {
+    esmExternals: 'loose'
   }
 }
 
